@@ -12,6 +12,13 @@ _pool: Optional[asyncpg.Pool] = None
 logger = logging.getLogger(__name__)
 
 
+def get_db_pool() -> asyncpg.Pool:
+    """Return the active connection pool (must call init_db_pool first)."""
+    if _pool is None:
+        raise RuntimeError("database pool not initialized")
+    return _pool
+
+
 async def init_db_pool() -> None:
     global _pool
     if _pool is None:

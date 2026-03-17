@@ -74,10 +74,19 @@ async def test_run_worker_acks_on_success(monkeypatch) -> None:
     async def fake_reclaim_stale_messages(*, consumer: str, min_idle_ms: int, count: int):
         return []
 
+    # Stub fire-and-forget tasks so they complete immediately (no orphaned tasks)
+    async def fake_embed_async(*args, **kwargs):
+        pass
+
+    async def fake_suggest_async(*args, **kwargs):
+        pass
+
     monkeypatch.setattr(worker_module, "read_group", fake_read_group)
     monkeypatch.setattr(worker_module, "ack_event", fake_ack_event)
     monkeypatch.setattr(worker_module, "upsert_issue", fake_upsert_issue)
     monkeypatch.setattr(worker_module, "reclaim_stale_messages", fake_reclaim_stale_messages)
+    monkeypatch.setattr(worker_module, "_embed_issue_async", fake_embed_async)
+    monkeypatch.setattr(worker_module, "_suggest_and_comment_async", fake_suggest_async)
 
     await worker_module.run_worker(stop_event=stop_event)
 

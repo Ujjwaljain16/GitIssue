@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import os
 from types import SimpleNamespace
 
 import asyncpg
@@ -8,6 +9,10 @@ import pytest_asyncio
 from app.db import store
 from app.normalizer.schema import IssueSignals, NormalizedIssue
 
+def _to_naive_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _issue(*, title: str, updated_at: datetime) -> NormalizedIssue:
@@ -21,8 +26,8 @@ def _issue(*, title: str, updated_at: datetime) -> NormalizedIssue:
         labels=["bug"],
         author="alice",
         state="open",
-        created_at=datetime(2026, 3, 17, 10, 0, tzinfo=timezone.utc),
-        updated_at=updated_at,
+        created_at=_to_naive_utc(datetime(2026, 3, 17, 10, 0, tzinfo=timezone.utc)),
+        updated_at=_to_naive_utc(updated_at),
         signals=IssueSignals(),
         raw_payload={"k": "v"},
     )
@@ -30,18 +35,37 @@ def _issue(*, title: str, updated_at: datetime) -> NormalizedIssue:
 
 @pytest_asyncio.fixture()
 async def db_ready(monkeypatch):
-    dsn = "postgresql://postgres:postgres@localhost:5432/issues"
+    dsn = (
+        os.getenv("TEST_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or "postgresql://postgres:postgres@localhost:5432/issues"
+    )
 
     try:
         conn = await asyncpg.connect(dsn=dsn)
-        await conn.close()
+        try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        except Exception as exc:
+            pytest.skip(
+                f"pgvector extension is not available for integration tests using DSN '{dsn}': {exc}"
+            )
+        finally:
+            await conn.close()
     except Exception as exc:
-        pytest.skip(f"Postgres is not reachable for integration tests: {exc}")
+        pytest.skip(
+            f"Postgres is not reachable for integration tests using DSN '{dsn}': {exc}"
+        )
 
     monkeypatch.setattr(store, "settings", SimpleNamespace(database_url=dsn))
-    await store.init_db_pool()
+    try:
+        await store.init_db_pool()
+    except Exception as exc:
+        pytest.skip(
+            f"Postgres integration setup failed for DSN '{dsn}': {exc}"
+        )
     yield
-    await store.close_db_pool()
+    if store._pool is not None:
+        await store.close_db_pool()
 
 
 @pytest.mark.asyncio

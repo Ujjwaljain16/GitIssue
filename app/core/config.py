@@ -7,6 +7,7 @@ class Settings:
     app_name: str
     app_env: str
     github_webhook_secret: str
+    github_token: str
     redis_url: str
     redis_stream: str
     redis_group: str
@@ -34,6 +35,7 @@ def load_settings() -> Settings:
         app_name=os.getenv("APP_NAME", "git-issue-tracker"),
         app_env=os.getenv("APP_ENV", "dev"),
         github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
+        github_token=os.getenv("GITHUB_TOKEN", ""),
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
         redis_stream=os.getenv("REDIS_STREAM", "github_events"),
         redis_group=os.getenv("REDIS_GROUP", "workers"),

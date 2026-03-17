@@ -10,6 +10,7 @@ from app.db.store import upsert_issue, update_embedding
 from app.embeddings import generate_embedding_async
 from app.normalizer.normalize import normalize
 from app.queue.redis_stream import ack_event, pending_delivery_count, push_dead_letter, read_group, reclaim_stale_messages
+from app.suggestions import suggest_duplicates, maybe_comment_with_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,38 @@ async def _embed_issue_async(external_id: str, title: str, body: str) -> None:
         logger.exception("embedding_generation_failed", extra={"external_id": external_id})
 
 
+async def _suggest_and_comment_async(
+    issue_id: int,
+    external_id: str,
+    repo: str,
+    issue_number: int,
+    title: str,
+    clean_body: str,
+    labels: list[str],
+) -> None:
+    """Fire-and-forget: run suggestion pipeline and post comment (non-blocking)."""
+    try:
+        suggestions = await suggest_duplicates(
+            issue_id=issue_id,
+            external_id=external_id,
+            repo=repo,
+            title=title,
+            clean_body=clean_body,
+            labels=labels,
+        )
+        if suggestions:
+            await maybe_comment_with_suggestions(
+                issue_id=issue_id,
+                external_id=external_id,
+                repo=repo,
+                issue_number=issue_number,
+                suggestions=suggestions,
+                github_token=settings.github_token or None,
+            )
+    except Exception:
+        logger.exception("suggestion_pipeline_failed", extra={"external_id": external_id})
+
+
 async def process_event(data: dict[str, Any]) -> None:
     event_type = data.get("event_type", "")
     if event_type != "issues":
@@ -40,9 +73,22 @@ async def process_event(data: dict[str, Any]) -> None:
 
     normalized = normalize(payload)
     await upsert_issue(normalized)
-    
+
     # Generate embedding async (non-blocking, fire-and-forget)
     asyncio.create_task(_embed_issue_async(normalized.external_id, normalized.title, normalized.clean_body))
+
+    # Run suggestion + comment pipeline (non-blocking, fire-and-forget)
+    # Only suggest for new issues (not edits) to avoid comment spam on every edit
+    if action == "opened":
+        asyncio.create_task(_suggest_and_comment_async(
+            issue_id=normalized.issue_number,  # used for exclusion only
+            external_id=normalized.external_id,
+            repo=normalized.repo,
+            issue_number=normalized.issue_number,
+            title=normalized.title,
+            clean_body=normalized.clean_body,
+            labels=normalized.labels,
+        ))
 
 
 async def run_worker(stop_event: asyncio.Event | None = None) -> None:
