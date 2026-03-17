@@ -6,7 +6,8 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.metrics import inc, observe_processing_latency
-from app.db.store import upsert_issue
+from app.db.store import upsert_issue, update_embedding
+from app.embeddings import generate_embedding_async
 from app.normalizer.normalize import normalize
 from app.queue.redis_stream import ack_event, pending_delivery_count, push_dead_letter, read_group, reclaim_stale_messages
 
@@ -14,6 +15,17 @@ logger = logging.getLogger(__name__)
 
 HANDLED_ACTIONS = {"opened", "edited", "reopened"}
 failure_counts: dict[str, int] = {}
+
+
+async def _embed_issue_async(external_id: str, title: str, body: str) -> None:
+    """Fire-and-forget embedding generation and storage (non-blocking)."""
+    try:
+        text = f"{title} {body}"
+        embedding = await generate_embedding_async(text)
+        await update_embedding(external_id, embedding)
+        logger.debug("embedding_generated", extra={"external_id": external_id})
+    except Exception:
+        logger.exception("embedding_generation_failed", extra={"external_id": external_id})
 
 
 async def process_event(data: dict[str, Any]) -> None:
@@ -28,6 +40,9 @@ async def process_event(data: dict[str, Any]) -> None:
 
     normalized = normalize(payload)
     await upsert_issue(normalized)
+    
+    # Generate embedding async (non-blocking, fire-and-forget)
+    asyncio.create_task(_embed_issue_async(normalized.external_id, normalized.title, normalized.clean_body))
 
 
 async def run_worker(stop_event: asyncio.Event | None = None) -> None:

@@ -83,3 +83,16 @@ async def upsert_issue(issue: NormalizedIssue) -> None:
             json.dumps(issue.raw_payload),
         )
     logger.info("issue_upserted", extra={"external_id": issue.external_id, "repo": issue.repo})
+
+
+async def update_embedding(external_id: str, embedding: list) -> None:
+    """Update embedding for an issue (non-blocking, fire-and-forget safe)."""
+    if _pool is None:
+        raise RuntimeError("database pool not initialized")
+
+    query = "UPDATE issues SET embedding = $1 WHERE external_id = $2"
+    
+    async with _pool.acquire() as conn:
+        await conn.execute(query, embedding, external_id)
+    
+    logger.debug("embedding_updated", extra={"external_id": external_id})
