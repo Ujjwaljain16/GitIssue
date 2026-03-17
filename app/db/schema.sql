@@ -12,7 +12,16 @@ CREATE TABLE IF NOT EXISTS issues (
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     inserted_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    raw_payload JSONB NOT NULL
+    raw_payload JSONB NOT NULL,
+    embedding vector(384)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_repo_issue ON issues(repo, issue_number);
+
+-- Vector similarity search (cosine distance)
+CREATE INDEX IF NOT EXISTS idx_embedding ON issues
+USING hnsw (embedding vector_cosine_ops);
+
+-- Full-text search on clean body
+CREATE INDEX IF NOT EXISTS idx_fts ON issues
+USING GIN (to_tsvector('english', clean_body));
