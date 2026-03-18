@@ -7,6 +7,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.metrics import inc, observe_processing_latency
 from app.db.store import upsert_issue, update_embedding
+from app.graph import map_issue_to_graph
 from app.embeddings import generate_embedding_async
 from app.normalizer.normalize import normalize
 from app.queue.redis_stream import ack_event, pending_delivery_count, push_dead_letter, read_group, reclaim_stale_messages
@@ -37,9 +38,13 @@ async def _suggest_and_comment_async(
     title: str,
     clean_body: str,
     labels: list[str],
+    issue_signals: dict,
 ) -> None:
     """Fire-and-forget: run suggestion pipeline and post comment (non-blocking)."""
     try:
+        if settings.repo_whitelist and repo not in settings.repo_whitelist:
+            return
+
         suggestions = await suggest_duplicates(
             issue_id=issue_id,
             external_id=external_id,
@@ -47,14 +52,18 @@ async def _suggest_and_comment_async(
             title=title,
             clean_body=clean_body,
             labels=labels,
+            issue_signals=issue_signals,
+            max_suggestions=settings.max_suggestions_per_comment,
+            signal_gate_threshold=settings.min_signal_strength,
+            score_threshold=settings.min_comment_score,
         )
-        if suggestions:
+        if suggestions and settings.enable_comments:
             await maybe_comment_with_suggestions(
                 issue_id=issue_id,
                 external_id=external_id,
                 repo=repo,
                 issue_number=issue_number,
-                suggestions=suggestions,
+                suggestions=suggestions[: settings.max_suggestions_per_comment],
                 github_token=settings.github_token or None,
             )
     except Exception:
@@ -72,7 +81,24 @@ async def process_event(data: dict[str, Any]) -> None:
         return
 
     normalized = normalize(payload)
-    await upsert_issue(normalized)
+    issue_id = await upsert_issue(normalized)
+    if issue_id is None:
+        issue_id = normalized.issue_number
+
+    # Build candidate evidence for graph decisions (always; no signal gate).
+    graph_candidates = await suggest_duplicates(
+        issue_id=issue_id,
+        external_id=normalized.external_id,
+        repo=normalized.repo,
+        title=normalized.title,
+        clean_body=normalized.clean_body,
+        labels=normalized.labels,
+        issue_signals=normalized.signals.model_dump(),
+        max_suggestions=20,
+        signal_gate_threshold=0.0,
+        score_threshold=0.0,
+    )
+    await map_issue_to_graph(issue_id=issue_id, issue=normalized, suggestions=graph_candidates, actor="worker")
 
     # Generate embedding async (non-blocking, fire-and-forget)
     asyncio.create_task(_embed_issue_async(normalized.external_id, normalized.title, normalized.clean_body))
@@ -81,13 +107,14 @@ async def process_event(data: dict[str, Any]) -> None:
     # Only suggest for new issues (not edits) to avoid comment spam on every edit
     if action == "opened":
         asyncio.create_task(_suggest_and_comment_async(
-            issue_id=normalized.issue_number,  # used for exclusion only
+            issue_id=issue_id,
             external_id=normalized.external_id,
             repo=normalized.repo,
             issue_number=normalized.issue_number,
             title=normalized.title,
             clean_body=normalized.clean_body,
             labels=normalized.labels,
+            issue_signals=normalized.signals.model_dump(),
         ))
 
 

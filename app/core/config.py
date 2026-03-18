@@ -1,5 +1,11 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load workspace-local .env so runtime and scripts consistently use the same config source.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 @dataclass(frozen=True)
@@ -19,6 +25,12 @@ class Settings:
     worker_reclaim_idle_ms: int
     worker_reclaim_count: int
     redis_dead_letter_stream: str
+    enable_comments: bool
+    repo_whitelist: list[str]
+    max_comments_per_issue: int
+    max_suggestions_per_comment: int
+    min_comment_score: float
+    min_signal_strength: float
 
 
 
@@ -27,6 +39,25 @@ def _to_int(value: str, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _to_bool(value: str, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _to_float(value: str, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_list(value: str) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 
@@ -47,6 +78,12 @@ def load_settings() -> Settings:
         worker_reclaim_idle_ms=_to_int(os.getenv("WORKER_RECLAIM_IDLE_MS", "30000"), 30000),
         worker_reclaim_count=_to_int(os.getenv("WORKER_RECLAIM_COUNT", "20"), 20),
         redis_dead_letter_stream=os.getenv("REDIS_DEAD_LETTER_STREAM", "github_events_dlq"),
+        enable_comments=_to_bool(os.getenv("ENABLE_COMMENTS", "false"), False),
+        repo_whitelist=_to_list(os.getenv("REPO_WHITELIST", "")),
+        max_comments_per_issue=_to_int(os.getenv("MAX_COMMENTS_PER_ISSUE", "1"), 1),
+        max_suggestions_per_comment=_to_int(os.getenv("MAX_SUGGESTIONS_PER_COMMENT", "2"), 2),
+        min_comment_score=_to_float(os.getenv("MIN_COMMENT_SCORE", "0.85"), 0.85),
+        min_signal_strength=_to_float(os.getenv("MIN_SIGNAL_STRENGTH", "0.30"), 0.30),
     )
 
 
