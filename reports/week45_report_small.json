@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-03-17T19:37:39.351630+00:00",
+  "repo_filter": "all",
+  "labels": {
+    "total": 20,
+    "true_positive": 1,
+    "false_positive": 0,
+    "related_not_duplicate": 1,
+    "cant_tell": 18
+  },
+  "metrics": {
+    "precision_percent": 100.0,
+    "recall_percent": 66.67,
+    "engagement_rate_percent": 0.0,
+    "negative_rate_percent": 0.0
+  },
+  "known_duplicates": {
+    "total": 3,
+    "detected": 2
+  },
+  "threshold_recommendation": {
+    "strategy": "max_f1",
+    "recommended_threshold": 0.5,
+    "f1_percent": 0.0
+  },
+  "pr_curve": [
+    {
+      "threshold": 0.5,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.55,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.6,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.65,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.7,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.75,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.8,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.85,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.9,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    {
+      "threshold": 0.95,
+      "precision": 100.0,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  ],
+  "error_taxonomy_false_positive": {},
+  "go_no_go": {
+    "precision_pass": true,
+    "recall_pass": true,
+    "engagement_pass": true,
+    "negative_pass": true
+  }
+}
