@@ -8,6 +8,8 @@ class IssueSignals(BaseModel):
     error_messages: list[str] = Field(default_factory=list)
     file_paths: list[str] = Field(default_factory=list)
     stack_trace: Optional[str] = None
+    has_stack_trace: bool = False
+    signal_strength: float = 0.0
 
 
 class NormalizedIssue(BaseModel):

@@ -58,6 +58,30 @@ def compute_signal_strength(issue_text: str, issue_labels: Optional[list[str]] =
     return min(score, 1.0)
 
 
+def compute_signal_strength_from_signals(issue_signals: Optional[dict], issue_text: str = "") -> float:
+    """Compute confidence gate score from persisted/extracted signal fields."""
+    if not issue_signals:
+        return compute_signal_strength(issue_text)
+
+    score = 0.0
+
+    if issue_signals.get("file_paths"):
+        score += 0.3
+    if issue_signals.get("error_messages"):
+        score += 0.3
+    if issue_signals.get("has_stack_trace") or issue_signals.get("stack_trace"):
+        score += 0.2
+
+    signal_strength = issue_signals.get("signal_strength")
+    if signal_strength is not None:
+        score = max(score, float(signal_strength))
+
+    if issue_text and len(issue_text.split()) > 50:
+        score = max(score, min(1.0, score + 0.1))
+
+    return min(score, 1.0)
+
+
 def should_suggest(signal_strength: float, gate_threshold: float = 0.3) -> bool:
     """
     Determine if issue has enough signal to suggest duplicates.

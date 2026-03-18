@@ -226,7 +226,7 @@ async def test_decision_is_deterministic_for_same_inputs():
         102: {"semantic": 0.87, "keyword": 0.6, "structural": 0.7, "label": 1.0, "final": 0.86},
     }
 
-    def _scores(*, semantic_score, text_a, text_b, labels_a, labels_b):
+    def _scores(*, semantic_score, text_a, text_b, labels_a, labels_b, signals_a=None, signals_b=None):
         if "10" in text_a:
             return score_by_id[101]
         return score_by_id[102]

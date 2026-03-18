@@ -5,6 +5,13 @@ from typing import Optional
 from app.db import get_db_pool
 
 
+def _to_pgvector_literal(embedding: list[float]) -> str:
+    """Convert embedding values to pgvector literal format: [v1,v2,...]."""
+    if not embedding:
+        raise ValueError("embedding must not be empty")
+    return "[" + ",".join(f"{float(v):.10f}" for v in embedding) + "]"
+
+
 async def retrieve_vector_candidates(
     embedding: list,
     repo: str,
@@ -28,18 +35,21 @@ async def retrieve_vector_candidates(
     pool = get_db_pool()
     
     query = """
-    SELECT id, external_id, title, clean_body, labels, state,
+        SELECT i.id, i.external_id, i.title, i.clean_body, i.labels, i.state,
+                     s.file_paths, s.error_messages, s.stack_trace, s.has_stack_trace, s.signal_strength,
            1 - (embedding <=> $1::vector) AS vector_score
-    FROM issues
-    WHERE repo = $2
-      AND id != $3
-      AND created_at > NOW() - make_interval(days => $4)
-      AND embedding IS NOT NULL
+        FROM issues i
+        LEFT JOIN issue_signals s ON s.issue_id = i.id
+        WHERE i.repo = $2
+            AND i.id != $3
+            AND i.created_at > NOW() - make_interval(days => $4)
+            AND i.embedding IS NOT NULL
     ORDER BY embedding <=> $1::vector
     LIMIT $5
     """
     
-    rows = await pool.fetch(query, embedding, repo, exclude_issue_id, days_back, limit)
+    vector_literal = _to_pgvector_literal(embedding)
+    rows = await pool.fetch(query, vector_literal, repo, exclude_issue_id, days_back, limit)
     return [dict(r) for r in rows]
 
 
@@ -66,12 +76,14 @@ async def retrieve_fts_candidates(
     pool = get_db_pool()
     
     query = """
-    SELECT id, external_id, title, clean_body, labels, state
-    FROM issues
-    WHERE repo = $1
-      AND id != $2
-      AND created_at > NOW() - make_interval(days => $3)
-      AND to_tsvector('english', clean_body) @@ plainto_tsquery('english', $4)
+        SELECT i.id, i.external_id, i.title, i.clean_body, i.labels, i.state,
+                     s.file_paths, s.error_messages, s.stack_trace, s.has_stack_trace, s.signal_strength
+        FROM issues i
+        LEFT JOIN issue_signals s ON s.issue_id = i.id
+        WHERE i.repo = $1
+            AND i.id != $2
+            AND i.created_at > NOW() - make_interval(days => $3)
+            AND to_tsvector('english', i.clean_body) @@ plainto_tsquery('english', $4)
     LIMIT $5
     """
     

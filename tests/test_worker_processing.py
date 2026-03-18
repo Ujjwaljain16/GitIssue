@@ -54,6 +54,42 @@ async def test_process_event_ignores_unhandled_actions(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_process_event_maps_issue_into_graph(monkeypatch) -> None:
+    called = {"map": 0}
+
+    async def fake_upsert_issue(_normalized):
+        return 77
+
+    async def fake_suggest_duplicates(**kwargs):
+        return [{"external_id": "github:acme/repo#1", "score": 0.5}]
+
+    async def fake_map_issue_to_graph(*, issue_id: int, issue, suggestions, actor: str):
+        called["map"] += 1
+        assert issue_id == 77
+        assert actor == "worker"
+        assert isinstance(suggestions, list)
+        return "node-77"
+
+    monkeypatch.setattr(worker_module, "upsert_issue", fake_upsert_issue)
+    monkeypatch.setattr(worker_module, "suggest_duplicates", fake_suggest_duplicates)
+    monkeypatch.setattr(worker_module, "map_issue_to_graph", fake_map_issue_to_graph)
+
+    async def fake_embed_async(*args, **kwargs):
+        pass
+
+    async def fake_suggest_async(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(worker_module, "_embed_issue_async", fake_embed_async)
+    monkeypatch.setattr(worker_module, "_suggest_and_comment_async", fake_suggest_async)
+
+    payload = _issue_payload(action="opened")
+    await worker_module.process_event({"event_type": "issues", "payload": json.dumps(payload)})
+
+    assert called["map"] == 1
+
+
+@pytest.mark.asyncio
 async def test_run_worker_acks_on_success(monkeypatch) -> None:
     stop_event = asyncio.Event()
     acks: list[str] = []
@@ -69,7 +105,13 @@ async def test_run_worker_acks_on_success(monkeypatch) -> None:
         return 1
 
     async def fake_upsert_issue(_normalized):
-        return None
+        return 42
+
+    async def fake_suggest_duplicates(**kwargs):
+        return []
+
+    async def fake_map_issue_to_graph(*, issue_id: int, issue, suggestions, actor: str):
+        return "node-1"
 
     async def fake_reclaim_stale_messages(*, consumer: str, min_idle_ms: int, count: int):
         return []
@@ -84,6 +126,8 @@ async def test_run_worker_acks_on_success(monkeypatch) -> None:
     monkeypatch.setattr(worker_module, "read_group", fake_read_group)
     monkeypatch.setattr(worker_module, "ack_event", fake_ack_event)
     monkeypatch.setattr(worker_module, "upsert_issue", fake_upsert_issue)
+    monkeypatch.setattr(worker_module, "suggest_duplicates", fake_suggest_duplicates)
+    monkeypatch.setattr(worker_module, "map_issue_to_graph", fake_map_issue_to_graph)
     monkeypatch.setattr(worker_module, "reclaim_stale_messages", fake_reclaim_stale_messages)
     monkeypatch.setattr(worker_module, "_embed_issue_async", fake_embed_async)
     monkeypatch.setattr(worker_module, "_suggest_and_comment_async", fake_suggest_async)

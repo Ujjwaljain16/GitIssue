@@ -4,7 +4,12 @@ import asyncio
 from typing import Optional
 
 from app.retrieval import retrieve_vector_candidates, retrieve_fts_candidates, merge_candidates
-from app.scoring import compute_all_scores, compute_signal_strength, should_suggest
+from app.scoring import (
+    compute_all_scores,
+    compute_signal_strength,
+    compute_signal_strength_from_signals,
+    should_suggest,
+)
 from app.embeddings import generate_embedding_async
 from app.feedback import log_suggestion
 
@@ -21,6 +26,7 @@ async def suggest_duplicates(
     title: str,
     clean_body: str,
     labels: Optional[list[str]],
+    issue_signals: Optional[dict] = None,
     max_suggestions: int = 3,
     signal_gate_threshold: float = 0.3,
     score_threshold: float = STRONG_THRESHOLD
@@ -45,7 +51,11 @@ async def suggest_duplicates(
     """
 
     # Gate 1: Signal strength
-    signal_strength = compute_signal_strength(clean_body, labels)
+    signal_strength = (
+        compute_signal_strength_from_signals(issue_signals, clean_body)
+        if issue_signals is not None
+        else compute_signal_strength(clean_body, labels)
+    )
     if not should_suggest(signal_strength, signal_gate_threshold):
         return []
 
@@ -76,13 +86,22 @@ async def suggest_duplicates(
 
     for candidate in candidates:
         semantic_score = candidate.get("vector_score", 0.0)
+        candidate_signals = {
+            "file_paths": candidate.get("file_paths") or [],
+            "error_messages": candidate.get("error_messages") or [],
+            "stack_trace": candidate.get("stack_trace"),
+            "has_stack_trace": bool(candidate.get("has_stack_trace")),
+            "signal_strength": candidate.get("signal_strength"),
+        }
 
         scores = compute_all_scores(
             semantic_score=semantic_score,
             text_a=candidate["clean_body"],
             text_b=clean_body,
             labels_a=candidate.get("labels"),
-            labels_b=labels
+            labels_b=labels,
+            signals_a=candidate_signals,
+            signals_b=issue_signals,
         )
 
         if scores["final"] >= score_threshold:
@@ -102,7 +121,10 @@ async def suggest_duplicates(
             keyword_score=scores["keyword"],
             structural_score=scores["structural"],
             label_score=scores["label"],
-            final_score=scores["final"]
+            final_score=scores["final"],
+            repo=repo,
+            source_signals=issue_signals,
+            candidate_signals=candidate_signals,
         ))
 
     # Fire feedback logging concurrently (best-effort, non-blocking)

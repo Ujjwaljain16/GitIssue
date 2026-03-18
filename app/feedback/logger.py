@@ -40,7 +40,10 @@ async def log_suggestion(
     keyword_score: float,
     structural_score: float,
     label_score: float,
-    final_score: float
+    final_score: float,
+    repo: Optional[str] = None,
+    source_signals: Optional[dict] = None,
+    candidate_signals: Optional[dict] = None,
 ) -> None:
     """
     Log a duplicate suggestion for analytics and learning.
@@ -60,17 +63,45 @@ async def log_suggestion(
     INSERT INTO duplicate_suggestions (
         source_issue_external_id,
         suggested_issue_external_id,
+        repo,
         semantic_score,
         keyword_score,
         structural_score,
         label_score,
-        final_score
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        final_score,
+        source_signal_strength,
+        candidate_signal_strength,
+        source_file_paths,
+        source_error_messages,
+        source_has_stack_trace,
+        candidate_file_paths,
+        candidate_error_messages,
+        candidate_has_stack_trace
+    ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16
+    )
     ON CONFLICT (source_issue_external_id, suggested_issue_external_id)
     DO UPDATE SET
+        repo = COALESCE(EXCLUDED.repo, duplicate_suggestions.repo),
+        semantic_score = EXCLUDED.semantic_score,
+        keyword_score = EXCLUDED.keyword_score,
+        structural_score = EXCLUDED.structural_score,
+        label_score = EXCLUDED.label_score,
         final_score = $7,
+        source_signal_strength = EXCLUDED.source_signal_strength,
+        candidate_signal_strength = EXCLUDED.candidate_signal_strength,
+        source_file_paths = EXCLUDED.source_file_paths,
+        source_error_messages = EXCLUDED.source_error_messages,
+        source_has_stack_trace = EXCLUDED.source_has_stack_trace,
+        candidate_file_paths = EXCLUDED.candidate_file_paths,
+        candidate_error_messages = EXCLUDED.candidate_error_messages,
+        candidate_has_stack_trace = EXCLUDED.candidate_has_stack_trace,
         suggested_at = NOW()
     """
+
+    source_signals = source_signals or {}
+    candidate_signals = candidate_signals or {}
     
     try:
         async with pool.acquire() as conn:
@@ -78,11 +109,20 @@ async def log_suggestion(
                 query,
                 source_issue_external_id,
                 suggested_issue_external_id,
+                repo,
                 semantic_score,
                 keyword_score,
                 structural_score,
                 label_score,
-                final_score
+                final_score,
+                source_signals.get("signal_strength"),
+                candidate_signals.get("signal_strength"),
+                source_signals.get("file_paths") or [],
+                source_signals.get("error_messages") or [],
+                bool(source_signals.get("has_stack_trace")),
+                candidate_signals.get("file_paths") or [],
+                candidate_signals.get("error_messages") or [],
+                bool(candidate_signals.get("has_stack_trace")),
             )
         logger.debug(
             "suggestion_logged",
@@ -118,7 +158,10 @@ async def log_suggestions_batch(suggestions_data: list[dict]) -> None:
             keyword_score=item.get("keyword_score", 0.0),
             structural_score=item.get("structural_score", 0.0),
             label_score=item.get("label_score", 0.0),
-            final_score=item["final_score"]
+            final_score=item["final_score"],
+            repo=item.get("repo"),
+            source_signals=item.get("source_signals"),
+            candidate_signals=item.get("candidate_signals"),
         )
 
 

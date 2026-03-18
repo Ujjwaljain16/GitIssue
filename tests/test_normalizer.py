@@ -38,6 +38,30 @@ def test_normalize_minimal_issue_payload() -> None:
     assert normalized.author == "alice"
 
 
+def test_normalize_extracts_signals_from_body() -> None:
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "acme/repo"},
+        "issue": {
+            "number": 99,
+            "title": "Crash",
+            "body": "NullPointerException at src/main.py:42 while saving",
+            "labels": [{"name": "bug"}],
+            "user": {"login": "alice"},
+            "state": "open",
+            "created_at": "2026-03-17T10:00:00Z",
+            "updated_at": "2026-03-17T10:01:00Z",
+        },
+    }
+
+    normalized = normalize(payload)
+
+    assert "NullPointerException" in normalized.signals.error_messages
+    assert "src/main.py" in normalized.signals.file_paths
+    assert normalized.signals.has_stack_trace is True
+    assert normalized.signals.signal_strength > 0.0
+
+
 def test_normalize_handles_null_body_and_empty_labels() -> None:
     payload = {
         "action": "opened",

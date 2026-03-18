@@ -73,7 +73,7 @@ async def test_upsert_is_idempotent(db_ready) -> None:
     assert store._pool is not None
 
     async with store._pool.acquire() as conn:
-        await conn.execute("TRUNCATE TABLE issues")
+        await conn.execute("TRUNCATE TABLE issues CASCADE")
 
     event = _issue(title="same", updated_at=datetime(2026, 3, 17, 10, 1, tzinfo=timezone.utc))
     for _ in range(10):
@@ -81,8 +81,10 @@ async def test_upsert_is_idempotent(db_ready) -> None:
 
     async with store._pool.acquire() as conn:
         count = await conn.fetchval("SELECT COUNT(*) FROM issues WHERE external_id=$1", event.external_id)
+        signal_count = await conn.fetchval("SELECT COUNT(*) FROM issue_signals")
 
     assert count == 1
+    assert signal_count == 1
 
 
 @pytest.mark.asyncio
@@ -90,7 +92,7 @@ async def test_out_of_order_update_does_not_regress_state(db_ready) -> None:
     assert store._pool is not None
 
     async with store._pool.acquire() as conn:
-        await conn.execute("TRUNCATE TABLE issues")
+        await conn.execute("TRUNCATE TABLE issues CASCADE")
 
     newer = _issue(title="new", updated_at=datetime(2026, 3, 17, 10, 2, tzinfo=timezone.utc))
     older = _issue(title="old", updated_at=datetime(2026, 3, 17, 10, 1, tzinfo=timezone.utc))

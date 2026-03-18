@@ -85,6 +85,36 @@ def structural_similarity(text_a: str, text_b: str) -> float:
     return intersection / union if union > 0 else 0.0
 
 
+def _signals_to_structural_set(signals: Optional[dict]) -> set[str]:
+    if not signals:
+        return set()
+
+    file_paths = signals.get("file_paths") or []
+    errors = signals.get("error_messages") or []
+    stack_trace = signals.get("stack_trace")
+    has_stack_trace = bool(signals.get("has_stack_trace")) or bool(stack_trace)
+
+    tokens = set(file_paths) | set(errors)
+    if has_stack_trace:
+        tokens.add("__stack_trace__")
+    return tokens
+
+
+def structural_similarity_from_signals(
+    signals_a: Optional[dict],
+    signals_b: Optional[dict],
+) -> float:
+    set_a = _signals_to_structural_set(signals_a)
+    set_b = _signals_to_structural_set(signals_b)
+
+    if not set_a or not set_b:
+        return 0.0
+
+    intersection = len(set_a & set_b)
+    union = len(set_a | set_b)
+    return intersection / union if union > 0 else 0.0
+
+
 def label_similarity(labels_a: Optional[list[str]], labels_b: Optional[list[str]]) -> float:
     """
     Jaccard similarity on labels.
@@ -108,6 +138,8 @@ def compute_hybrid_score(
     text_b: str,
     labels_a: Optional[list[str]],
     labels_b: Optional[list[str]],
+    signals_a: Optional[dict] = None,
+    signals_b: Optional[dict] = None,
     weights: Optional[dict] = None
 ) -> float:
     """
@@ -141,7 +173,11 @@ def compute_hybrid_score(
     # Convert cosine to unit and clamp
     semantic = max(0.0, min(1.0, cosine_to_unit(semantic_score)))
     keyword = keyword_overlap_score(text_a, text_b)
-    structural = structural_similarity(text_a, text_b)
+    structural = (
+        structural_similarity_from_signals(signals_a, signals_b)
+        if signals_a is not None and signals_b is not None
+        else structural_similarity(text_a, text_b)
+    )
     label = label_similarity(labels_a, labels_b)
     
     # Weighted sum
@@ -162,6 +198,8 @@ def compute_all_scores(
     text_b: str,
     labels_a: Optional[list[str]],
     labels_b: Optional[list[str]],
+    signals_a: Optional[dict] = None,
+    signals_b: Optional[dict] = None,
     weights: Optional[dict] = None
 ) -> dict:
     """
@@ -176,7 +214,11 @@ def compute_all_scores(
 
     semantic = max(0.0, min(1.0, cosine_to_unit(semantic_score)))
     keyword = keyword_overlap_score(text_a, text_b)
-    structural = structural_similarity(text_a, text_b)
+    structural = (
+        structural_similarity_from_signals(signals_a, signals_b)
+        if signals_a is not None and signals_b is not None
+        else structural_similarity(text_a, text_b)
+    )
     label = label_similarity(labels_a, labels_b)
 
     final = max(0.0, min(1.0,
